@@ -84,13 +84,13 @@ app.registerExtension({
             id: "mec.isolate.enabled",
             name: "Isolate Subgraph: right-click node → Isolate",
             type: "boolean",
-            default: true,
+            defaultValue: true,
         },
         {
             id: "mec.isolate.dim",
             name: "Isolate Subgraph: dimmed alpha (0..1)",
             type: "number",
-            default: 0.18,
+            defaultValue: 0.18,
         },
     ],
     // Extension-API menu hooks (no LGraphCanvas.prototype patching).

@@ -248,21 +248,21 @@ app.registerExtension({
             id: "mec.progress_hud.enabled",
             name: "Progress HUD — enable per-node overlay",
             type: "boolean",
-            default: true,
+            defaultValue: true,
             onChange: (v) => { SETTINGS.enabled = !!v; if (!v) PROGRESS.clear(); },
         },
         {
             id: "mec.progress_hud.eta",
             name: "Progress HUD — show ETA + rate",
             type: "boolean",
-            default: true,
+            defaultValue: true,
             onChange: (v) => { SETTINGS.eta = !!v; },
         },
         {
             id: "mec.progress_hud.title_pct",
             name: "Progress HUD — prefix node title with % while running",
             type: "boolean",
-            default: true,
+            defaultValue: true,
             onChange: (v) => {
                 SETTINGS.title_pct = !!v;
                 if (!v) _clear_all_title_prefixes();

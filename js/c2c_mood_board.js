@@ -676,7 +676,7 @@ app.registerExtension({
             id: "c2c.mood_board.enabled",
             name: "Mood Board: session output gallery",
             type: "boolean",
-            default: true,
+            defaultValue: true,
             onChange: (v) => {
                 const b = document.getElementById(BTN_ID);
                 if (b) b.style.display = v ? "flex" : "none";

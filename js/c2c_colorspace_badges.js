@@ -133,7 +133,7 @@ app.registerExtension({
             id: "mec.colorspace_badges.enabled",
             name: "Colorspace Badges: show inferred OCIO/colorspace on IMAGE nodes",
             type: "boolean",
-            default: true,
+            defaultValue: true,
             onChange: (v) => { _enabled = (v !== false); },
         },
     ],

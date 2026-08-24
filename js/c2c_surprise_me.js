@@ -398,7 +398,7 @@ app.registerExtension({
             name: "Surprise Me: enabled",
             tooltip: "Show 🎰 button (left-click = use default profile, right-click = picker).",
             type: "boolean",
-            default: true,
+            defaultValue: true,
             onChange: (v) => { const b = document.getElementById(BTN_ID); if (b) b.style.display = v ? "flex" : "none"; },
         },
         {
@@ -407,7 +407,7 @@ app.registerExtension({
             tooltip: "Profile used on left-click. Right-click the 🎰 button to switch.",
             type: "combo",
             options: ["mild", "wild", "chaos"],
-            default: "mild",
+            defaultValue: "mild",
             onChange: () => _updateBadge(),
         },
         {
@@ -415,14 +415,14 @@ app.registerExtension({
             name: "Surprise Me: AI style-tag (chaos only)",
             tooltip: "When the chaos profile runs, append one short AI-generated style descriptor to the first positive CLIPTextEncode.",
             type: "boolean",
-            default: false,
+            defaultValue: false,
         },
         {
             id: "mec.surprise_me.dry_run",
             name: "Surprise Me: dry-run (don't queue)",
             tooltip: "Mutate widgets without queueing a prompt — useful for inspecting what changed.",
             type: "boolean",
-            default: false,
+            defaultValue: false,
         },
     ],
     async setup() {

@@ -62,7 +62,7 @@ app.registerExtension({
             name: "Style Presets: right-click → Apply style preset",
             tooltip: "Adds a curated style-tag palette to the prompt node context menu.",
             type: "boolean",
-            default: true,
+            defaultValue: true,
         },
     ],
     async beforeRegisterNodeDef(nodeType, nodeData) {

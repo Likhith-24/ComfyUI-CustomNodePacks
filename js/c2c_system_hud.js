@@ -511,7 +511,7 @@ app.registerExtension({
             id: "mec.system_hud.enabled",
             name: "System HUD \u2014 show queue/VRAM/cost chip",
             type: "boolean",
-            default: true,
+            defaultValue: true,
             onChange: (v) => {
                 SETTINGS.enabled = !!v;
                 if (v) _start(); else _stop();
@@ -521,14 +521,14 @@ app.registerExtension({
             id: "mec.system_hud.vram",
             name: "System HUD \u2014 include VRAM usage",
             type: "boolean",
-            default: true,
+            defaultValue: true,
             onChange: (v) => { SETTINGS.vram = !!v; },
         },
         {
             id: "mec.system_hud.cost",
             name: "System HUD \u2014 include AI cost",
             type: "boolean",
-            default: true,
+            defaultValue: true,
             onChange: (v) => { SETTINGS.cost = !!v; },
         },
     ],

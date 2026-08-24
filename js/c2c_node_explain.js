@@ -1650,7 +1650,7 @@ app.registerExtension({
             tooltip: "Where node/slot info is shown. 'panel' = fixed bottom-right dock (draggable, sticky). 'popover' = floating bubble next to node (legacy).",
             type:    "combo",
             options: ["panel", "popover"],
-            default: "panel",
+            defaultValue: "panel",
         },
         {
             id:      "mec.node_explain.backend",
@@ -1658,7 +1658,7 @@ app.registerExtension({
             tooltip: "Which backend to use for 'What does this node do?' hover tooltips.",
             type:    "combo",
             options: ["auto", "api", "gguf", "off"],
-            default: "auto",
+            defaultValue: "auto",
         },
         {
             id:      "mec.node_explain.gguf_quant",
@@ -1666,7 +1666,7 @@ app.registerExtension({
             tooltip: "Which Qwen3.5-2B quantisation to use for local inference.",
             type:    "combo",
             options: ["Q4_K_M", "Q5_K_M", "Q8_0"],
-            default: "Q4_K_M",
+            defaultValue: "Q4_K_M",
         },
         {
             id:      "mec.node_explain.dwell_ms",
@@ -1674,7 +1674,7 @@ app.registerExtension({
             tooltip: "How long to hover a node title before the explanation card appears. Lower = snappier.",
             type:    "slider",
             attrs:   { min: 50, max: 1500, step: 50 },
-            default: DEFAULT_DWELL_MS,
+            defaultValue: DEFAULT_DWELL_MS,
         },
     ],
 

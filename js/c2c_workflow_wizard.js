@@ -746,7 +746,7 @@ app.registerExtension({
             name: "Workflow Wizard: enabled",
             tooltip: "Show 🧙 button to launch step-by-step workflow wizards.",
             type: "boolean",
-            default: true,
+            defaultValue: true,
             onChange: (v) => {
                 const b = document.getElementById(BTN_ID);
                 if (b) b.style.display = v ? "flex" : "none";

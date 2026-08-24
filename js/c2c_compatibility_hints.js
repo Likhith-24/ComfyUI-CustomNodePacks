@@ -132,7 +132,7 @@ app.registerExtension({
             name: "Compatibility Hints: highlight matching slots",
             tooltip: "Pulse green rings around input slots that accept the link being dragged.",
             type: "boolean",
-            default: true,
+            defaultValue: true,
             onChange: (v) => { _enabled = !!v; },
         },
     ],

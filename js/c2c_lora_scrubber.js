@@ -205,7 +205,7 @@ app.registerExtension({
             name: "LoRA Scrubber: enabled",
             tooltip: "Right-click a LoRA loader → 'Scrub strength_model' for an inline slider.",
             type: "boolean",
-            default: true,
+            defaultValue: true,
         },
     ],
     async setup() {
