@@ -37,6 +37,7 @@ const TOP_SELECTORS = [
     ".comfyui-body-top",
     ".workflow-tabs",
     ".comfyui-menu",
+    ".top-menu-container",   // ComfyUI >= 1.16 renamed the top bar
     "#comfyui-menu",
     ".comfy-menu",
 ];
