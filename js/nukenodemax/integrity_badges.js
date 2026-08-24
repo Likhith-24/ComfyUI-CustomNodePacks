@@ -371,6 +371,7 @@ function findFallbackContainer() {
     return (
         document.querySelector(".comfyui-menu .comfyui-menu-right, .top-menu-container .comfyui-menu-right") ||
         document.querySelector(".comfyui-menu") ||
+            document.querySelector(".top-menu-container") ||
         document.querySelector(".comfy-menu") ||
         null
     );
