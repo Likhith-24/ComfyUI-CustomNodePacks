@@ -738,7 +738,7 @@ function _esc(s) {
 // Extension entry
 // ─────────────────────────────────────────────────────────────────────────────
 
-if (!LITE) app.registerExtension({
+app.registerExtension({
     name: "C2C.WorkflowWizard",
     settings: [
         {

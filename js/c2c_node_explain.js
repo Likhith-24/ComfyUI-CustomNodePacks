@@ -1640,7 +1640,7 @@ function _onMouseLeave() {
 }
 
 // ── extension registration ─────────────────────────────────────────────────
-if (!LITE) app.registerExtension({
+app.registerExtension({
     name: "C2C.NodeExplain",
 
     settings: [

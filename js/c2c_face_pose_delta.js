@@ -24,6 +24,7 @@
 
 import { app } from "../../scripts/app.js";
 import { c2cConfirm } from "./_c2c_dialog.js";
+import { vueSyncNodeWidgets } from "./_widget_visibility.js";
 
 // ─── MediaPipe FaceMesh landmark shortcuts ──────────────────────────────
 // Curated subset — the indices a beginner would most plausibly want to
@@ -399,6 +400,42 @@ app.registerExtension({
                 null,
                 () => _openEditor(this, widget),
             );
+
+            // The raw keyframe_edits_json textarea is authored ENTIRELY by the
+            // modal above — showing the raw JSON is just clutter. Collapse it to
+            // a hidden state-carrier (value still saves with the workflow).
+            const node = this;
+            const _collapse = () => {
+                // external_anchors_json is the same kind of raw-JSON state
+                // carrier (optional per-frame anchor override) — collapse it
+                // too; wiring it from another node still works via its socket.
+                const extW = (node.widgets || []).find(w => w.name === "external_anchors_json");
+                for (const jw of [extW].filter(Boolean)) {
+                    jw.type = "hidden";
+                    jw.computeSize = () => [0, -4];
+                    jw.hidden = true;
+                    const jel = jw.element || jw.inputEl;
+                    if (jel) {
+                        jel.style.display = "none";
+                        const jwrap = jel.parentElement;
+                        if (jwrap?.classList?.contains("dom-widget")) jwrap.style.display = "none";
+                    }
+                }
+                widget.type = "hidden";
+                widget.computeSize = () => [0, -4];
+                widget.hidden = true;
+                const el = widget.element || widget.inputEl;
+                if (el) {
+                    el.style.display = "none";
+                    const wrap = el.parentElement;
+                    if (wrap?.classList?.contains("dom-widget")) wrap.style.display = "none";
+                }
+                vueSyncNodeWidgets(node);
+                try { node.setSize(node.computeSize()); } catch (e) { /* noop */ }
+                node.setDirtyCanvas?.(true, true);
+            };
+            // run after the DOM widget mounts
+            setTimeout(_collapse, 0);
             return r;
         };
     },

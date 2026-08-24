@@ -105,7 +105,9 @@ class PaintCanvasController {
 
     _onDown(e) {
         e.preventDefault();
-        this.draw.setPointerCapture?.(e.pointerId);
+        // ?. only guards method existence — setPointerCapture still THROWS
+        // NotFoundError when the pointer is already inactive. try/catch it.
+        try { this.draw.setPointerCapture?.(e.pointerId); } catch (_) {}
         this._down = true;
         this._eraser = e.button === 2;          // right-button erases
         this._last = this._localPos(e);
@@ -295,6 +297,9 @@ app.registerExtension({
             dataW.computeSize = () => [0, -4];
             dataW.type = "hidden";
             dataW.draw = () => {};
+            // Nodes 2.0: the Vue renderer reads options.hidden for row
+            // visibility (create-time set, so no snapshot nudge needed).
+            dataW.options.hidden = true;
             // Hide the backing DOM element + its dom-widget wrapper too —
             // ComfyUI keeps these visible even when widget.type === "hidden".
             {

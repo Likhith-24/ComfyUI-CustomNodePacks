@@ -10,13 +10,17 @@
  * Apache-2.0 © Code2Collapse.
  */
 
-import { app } from "../../scripts/app.js";
+// Absolute import: this file is raw-copied between packs that serve at
+// different URL depths (CNP /extensions/PACK/, WNE /extensions/PACK/js/) —
+// a relative ../../ resolves differently in each and 404s in WNE.
+import { app } from "/scripts/app.js";
 import {
     capWdNode,
     findWdWidget,
     installWanDirectorPrototype,
     wdHideWidget,
     wdShowWidget,
+    wdVueNudge,
 } from "./_wan_director_ui.js";
 
 // Mirror of nodes/wan_director/director_node.py:VARIANT_TABLE flags
@@ -41,11 +45,13 @@ const EVERANIMATE_WIDGETS = [
 ];
 
 function hideWidget(w) {
+    if (!w) return;   // widget may live on the WanDirectorExtraArgs node now (advanced split)
     wdHideWidget(w);
     w._wd_hidden = true;
 }
 
 function showWidget(w) {
+    if (!w) return;   // ditto — never crash on a moved/renamed widget
     wdShowWidget(w);
     w._wd_hidden = false;
 }
@@ -79,11 +85,13 @@ function applyVariant(node, variant) {
         if (flags.everanimate) showWidget(w); else hideWidget(w);
     }
 
+    wdVueNudge(node);
     capWdNode(node);
     app.graph?.setDirtyCanvas?.(true, true);
 }
 
-app.registerExtension({
+// Guard against double-registration when WanNodeExperiments ships the same extension.
+if (!(app.extensions || []).some(e => e?.name === "C2C.WanDirector.VariantGate")) app.registerExtension({
     name: "C2C.WanDirector.VariantGate",
     async beforeRegisterNodeDef(nodeType, nodeData) {
         if (nodeData?.name !== "WanDirectorC2C") return;

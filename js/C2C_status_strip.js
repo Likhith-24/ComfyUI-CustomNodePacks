@@ -23,6 +23,7 @@
 // ─────────────────────────────────────────────────────────────────────
 
 import { app } from "../../scripts/app.js";
+import { LITE } from "./_c2c_lite.js";
 
 const HOST_ID = "c2c-status-strip";
 

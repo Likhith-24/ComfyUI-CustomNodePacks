@@ -241,7 +241,7 @@ function _ensure_anim() {
     }
 }
 
-if (!LITE) app.registerExtension({
+app.registerExtension({
     name: "C2C.ProgressHUD",
     settings: [
         {

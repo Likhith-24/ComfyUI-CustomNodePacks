@@ -124,7 +124,7 @@ function _setupRedrawWhileConnecting() {
     window.addEventListener("pointerdown", () => { if (_enabled) start(); }, true);
 }
 
-if (!LITE) app.registerExtension({
+app.registerExtension({
     name: "C2C.CompatibilityHints",
     settings: [
         {

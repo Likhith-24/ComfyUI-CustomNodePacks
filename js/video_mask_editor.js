@@ -128,10 +128,27 @@ class VMEEditor {
         this.curMask = null;       // ImageData for current frame's working buffer
         this.curDirty = false;
         // Tool state
-        this.tool = "brush";       // brush|erase|fill|lasso
+        this.tool = "brush";       // brush|erase|fill|lasso|rect|ellipse|polygon|star|line
         this.brushRadius = 30;
         this.brushOpacity = 1.0;
         this.brushFeather = 0.6;
+
+        // Shape-tool state (rect/ellipse/polygon/star/line)
+        this.shapeStart = null;    // {x,y} in image coords — drag anchor
+        this.shapeCur = null;      // {x,y} live drag point
+        this.shapeSides = 5;       // polygon/star vertex count
+        this.starInner = 0.5;      // star inner-radius ratio
+        this.shapeRotation = 0;    // radians
+        this.shapeSquare = false;  // constrain to square/circle (Shift)
+
+        // Roto pen state — editable spline through anchor points.
+        this.penPoints = [];       // [{x,y}] anchors in image coords
+        this.penDragIdx = -1;      // index of anchor being dragged (-1 none)
+        this.penHover = null;      // {x,y} rubber-band cursor point
+        this.penSmooth = true;     // smooth (Catmull-Rom) vs straight polygon
+
+        // Shapes & roto add to the mask by default; subtract cuts holes.
+        this.subtractMode = false;
         this.onion = true;
         this.painting = false;
         this.lastPaint = null;
@@ -296,6 +313,32 @@ class VMEEditor {
         this.draw();
     }
 
+    // ── Whole-frame mask ops ─────────────────────────────────────────
+    _invertMask() {
+        if (!this.curMask) return;
+        this._pushUndo();
+        const d = this.curMask.data, ac = this._hexToRgb(C.accent);
+        for (let p = 0; p < d.length; p += 4) {
+            d[p+3] = 255 - d[p+3];
+            d[p] = ac.r; d[p+1] = ac.g; d[p+2] = ac.b;
+        }
+        this.curDirty = true; this.draw();
+    }
+    _clearMask() {
+        if (!this.curMask) return;
+        this._pushUndo();
+        const d = this.curMask.data;
+        for (let p = 3; p < d.length; p += 4) d[p] = 0;
+        this.curDirty = true; this.draw();
+    }
+    _fillFrame() {
+        if (!this.curMask) return;
+        this._pushUndo();
+        const d = this.curMask.data, ac = this._hexToRgb(C.accent);
+        for (let p = 0; p < d.length; p += 4) { d[p+3] = 255; d[p]=ac.r; d[p+1]=ac.g; d[p+2]=ac.b; }
+        this.curDirty = true; this.draw();
+    }
+
     // ── Painting ─────────────────────────────────────────────────────
     _stamp(x, y, prev) {
         // Draw soft brush onto curMask. We use straight per-pixel
@@ -348,6 +391,160 @@ class VMEEditor {
                 }
             }
         }
+    }
+
+    // ── Shape primitives (Nuke-style) ───────────────────────────────
+    // Outline points of the current shape from its drag bounding box
+    // (image coords). Mirrors nodes/_spline_curves.make_primitive.
+    _shapePoints(kind, x0, y0, x1, y1) {
+        let ax0 = Math.min(x0, x1), ay0 = Math.min(y0, y1);
+        let ax1 = Math.max(x0, x1), ay1 = Math.max(y0, y1);
+        if (this.shapeSquare) {
+            const s = Math.min(ax1 - ax0, ay1 - ay0);
+            ax1 = ax0 + s; ay1 = ay0 + s;
+        }
+        const cx = (ax0 + ax1) / 2, cy = (ay0 + ay1) / 2;
+        const rx = Math.max(0.5, (ax1 - ax0) / 2), ry = Math.max(0.5, (ay1 - ay0) / 2);
+        const rot = this.shapeRotation || 0;
+        const rotate = (px, py) => {
+            if (!rot) return [px, py];
+            const dx = px - cx, dy = py - cy, c = Math.cos(rot), s = Math.sin(rot);
+            return [cx + dx * c - dy * s, cy + dx * s + dy * c];
+        };
+        const pts = [];
+        if (kind === "rect") {
+            for (const [px, py] of [[ax0,ay0],[ax1,ay0],[ax1,ay1],[ax0,ay1]]) pts.push(rotate(px,py));
+            return pts;
+        }
+        if (kind === "ellipse") {
+            const N = 72;
+            for (let i = 0; i < N; i++) { const a = (i/N)*Math.PI*2; pts.push(rotate(cx+Math.cos(a)*rx, cy+Math.sin(a)*ry)); }
+            return pts;
+        }
+        if (kind === "polygon" || kind === "star") {
+            const n = Math.max(3, this.shapeSides|0);
+            const inner = kind === "star" ? Math.max(0.05, Math.min(0.95, this.starInner)) : 1;
+            const count = kind === "star" ? n*2 : n;
+            const a0 = -Math.PI/2;
+            for (let i = 0; i < count; i++) {
+                const a = a0 + (i/count)*Math.PI*2;
+                const rr = (kind === "star" && (i % 2)) ? inner : 1;
+                pts.push(rotate(cx + Math.cos(a)*rx*rr, cy + Math.sin(a)*ry*rr));
+            }
+            return pts;
+        }
+        return pts;
+    }
+
+    // Rasterise the live shape into curMask's alpha (feathered). Uses an
+    // offscreen canvas then composites — the exact same alpha the brush
+    // writes, so keyframe/tween/player are untouched.
+    _rasterizeShape(kind) {
+        if (!this.shapeStart || !this.shapeCur || !this.curMask) return;
+        const W = this.curMask.width, H = this.curMask.height;
+        const x0 = this.shapeStart.x, y0 = this.shapeStart.y;
+        const x1 = this.shapeCur.x, y1 = this.shapeCur.y;
+        if (Math.hypot(x1 - x0, y1 - y0) < 1.5) return;   // ignore accidental taps
+        const tmp = document.createElement("canvas"); tmp.width = W; tmp.height = H;
+        const tc = tmp.getContext("2d");
+        const featherPx = Math.round((this.brushFeather || 0) * 24);
+        tc.fillStyle = "#fff"; tc.strokeStyle = "#fff";
+        if (featherPx > 0) { tc.shadowColor = "#fff"; tc.shadowBlur = featherPx; }
+        if (kind === "line") {
+            tc.lineWidth = Math.max(1, this.brushRadius);
+            tc.lineCap = "round";
+            tc.beginPath(); tc.moveTo(x0, y0); tc.lineTo(x1, y1); tc.stroke();
+        } else {
+            const pts = this._shapePoints(kind, x0, y0, x1, y1);
+            if (pts.length < 3) return;
+            tc.beginPath(); tc.moveTo(pts[0][0], pts[0][1]);
+            for (let i = 1; i < pts.length; i++) tc.lineTo(pts[i][0], pts[i][1]);
+            tc.closePath(); tc.fill();
+        }
+        const shp = tc.getImageData(0, 0, W, H).data;
+        const data = this.curMask.data;
+        const accent = this._hexToRgb(C.accent);
+        const op = this.brushOpacity;
+        const sub = this.subtractMode;
+        for (let p = 0; p < W * H; p++) {
+            const sa = shp[p*4+3];
+            if (!sa) continue;
+            const i = p*4;
+            const add = Math.round(sa * op);
+            if (sub) { data[i+3] = Math.max(0, data[i+3] - add); }
+            else { data[i+3] = Math.min(255, data[i+3] + add); data[i] = accent.r; data[i+1] = accent.g; data[i+2] = accent.b; }
+        }
+        this.curDirty = true;
+    }
+
+    // ── Roto pen (editable spline) ───────────────────────────────────
+    // Find the anchor index near a frame-space point (for grab/close).
+    _penHit(fp, tolImg) {
+        for (let i = 0; i < this.penPoints.length; i++) {
+            const p = this.penPoints[i];
+            if (Math.hypot(p.x - fp.x, p.y - fp.y) <= tolImg) return i;
+        }
+        return -1;
+    }
+
+    // Sample a smooth closed/open curve through the anchors (Catmull-Rom),
+    // or the straight polygon when penSmooth is off. Returns [[x,y],…].
+    _penCurve(closed) {
+        const P = this.penPoints;
+        const n = P.length;
+        if (n < 2) return P.map(p => [p.x, p.y]);
+        if (!this.penSmooth || n < 3) {
+            const pts = P.map(p => [p.x, p.y]);
+            return pts;
+        }
+        const out = [];
+        const seg = 16;                          // samples per span
+        const at = (i) => {                      // clamped/wrapped index
+            if (closed) return P[((i % n) + n) % n];
+            return P[Math.max(0, Math.min(n - 1, i))];
+        };
+        const last = closed ? n : n - 1;
+        for (let i = 0; i < last; i++) {
+            const p0 = at(i - 1), p1 = at(i), p2 = at(i + 1), p3 = at(i + 2);
+            for (let s = 0; s < seg; s++) {
+                const t = s / seg, t2 = t * t, t3 = t2 * t;
+                const x = 0.5 * ((2*p1.x) + (-p0.x + p2.x)*t + (2*p0.x - 5*p1.x + 4*p2.x - p3.x)*t2 + (-p0.x + 3*p1.x - 3*p2.x + p3.x)*t3);
+                const y = 0.5 * ((2*p1.y) + (-p0.y + p2.y)*t + (2*p0.y - 5*p1.y + 4*p2.y - p3.y)*t2 + (-p0.y + 3*p1.y - 3*p2.y + p3.y)*t3);
+                out.push([x, y]);
+            }
+        }
+        if (!closed) out.push([P[n-1].x, P[n-1].y]);
+        return out;
+    }
+
+    // Rasterise the closed roto spline into curMask alpha (feathered).
+    _commitPen() {
+        if (this.penPoints.length < 3 || !this.curMask) { this.penPoints = []; return; }
+        this._pushUndo();
+        const W = this.curMask.width, H = this.curMask.height;
+        const pts = this._penCurve(true);
+        const tmp = document.createElement("canvas"); tmp.width = W; tmp.height = H;
+        const tc = tmp.getContext("2d");
+        const featherPx = Math.round((this.brushFeather || 0) * 24);
+        if (featherPx > 0) { tc.shadowColor = "#fff"; tc.shadowBlur = featherPx; }
+        tc.fillStyle = "#fff";
+        tc.beginPath(); tc.moveTo(pts[0][0], pts[0][1]);
+        for (let i = 1; i < pts.length; i++) tc.lineTo(pts[i][0], pts[i][1]);
+        tc.closePath(); tc.fill();
+        const shp = tc.getImageData(0, 0, W, H).data;
+        const data = this.curMask.data;
+        const accent = this._hexToRgb(C.accent);
+        const op = this.brushOpacity;
+        const sub = this.subtractMode;
+        for (let p = 0; p < W * H; p++) {
+            const sa = shp[p*4+3]; if (!sa) continue;
+            const i = p*4;
+            const add = Math.round(sa * op);
+            if (sub) { data[i+3] = Math.max(0, data[i+3] - add); }
+            else { data[i+3] = Math.min(255, data[i+3] + add); data[i] = accent.r; data[i+1] = accent.g; data[i+2] = accent.b; }
+        }
+        this.curDirty = true;
+        this.penPoints = []; this.penHover = null; this.penDragIdx = -1;
     }
 
     _floodFill(x, y) {
@@ -512,6 +709,67 @@ class VMEEditor {
             for (let i = 1; i < this.lasso.length; i++) ctx.lineTo(this.lasso[i].x, this.lasso[i].y);
             ctx.stroke();
             ctx.setLineDash([]);
+        }
+
+        // Shape preview (live drag outline for rect/ellipse/polygon/star/line).
+        if (this.shaping && this.shapeStart && this.shapeCur) {
+            ctx.strokeStyle = C.accent;
+            ctx.fillStyle = (C.accent || "#89b4fa") + "22";
+            ctx.lineWidth = 2 / this.zoom;
+            ctx.setLineDash([6 / this.zoom, 4 / this.zoom]);
+            if (this.tool === "line") {
+                ctx.beginPath();
+                ctx.moveTo(this.shapeStart.x, this.shapeStart.y);
+                ctx.lineTo(this.shapeCur.x, this.shapeCur.y);
+                ctx.stroke();
+            } else {
+                const pts = this._shapePoints(this.tool, this.shapeStart.x, this.shapeStart.y,
+                                              this.shapeCur.x, this.shapeCur.y);
+                if (pts.length >= 3) {
+                    ctx.beginPath();
+                    ctx.moveTo(pts[0][0], pts[0][1]);
+                    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.stroke();
+                }
+            }
+            ctx.setLineDash([]);
+        }
+
+        // Roto pen preview: smooth curve + rubber band + draggable anchors.
+        if (this.tool === "pen" && this.penPoints.length) {
+            const P = this.penPoints;
+            const closedPreview = P.length >= 3;
+            const curve = this._penCurve(closedPreview);
+            ctx.lineWidth = 2 / this.zoom;
+            // filled preview of the closed area
+            if (closedPreview && curve.length >= 3) {
+                ctx.fillStyle = (C.accent || "#89b4fa") + "22";
+                ctx.beginPath(); ctx.moveTo(curve[0][0], curve[0][1]);
+                for (let i = 1; i < curve.length; i++) ctx.lineTo(curve[i][0], curve[i][1]);
+                ctx.closePath(); ctx.fill();
+            }
+            // the curve itself
+            ctx.strokeStyle = C.accent;
+            ctx.setLineDash([6 / this.zoom, 4 / this.zoom]);
+            ctx.beginPath(); ctx.moveTo(curve[0][0], curve[0][1]);
+            for (let i = 1; i < curve.length; i++) ctx.lineTo(curve[i][0], curve[i][1]);
+            ctx.stroke();
+            // rubber band from last anchor to cursor
+            if (this.penHover && this.penDragIdx < 0) {
+                const lp = P[P.length - 1];
+                ctx.beginPath(); ctx.moveTo(lp.x, lp.y); ctx.lineTo(this.penHover.x, this.penHover.y); ctx.stroke();
+            }
+            ctx.setLineDash([]);
+            // anchor handles
+            const rr = 5 / this.zoom;
+            for (let i = 0; i < P.length; i++) {
+                ctx.beginPath(); ctx.arc(P[i].x, P[i].y, rr, 0, Math.PI * 2);
+                ctx.fillStyle = (i === 0) ? C.accent2 : "#fff";
+                ctx.fill();
+                ctx.lineWidth = 1.5 / this.zoom; ctx.strokeStyle = C.accent; ctx.stroke();
+            }
         }
 
         ctx.restore();
@@ -708,10 +966,21 @@ function openModal(node) {
     const ed = new VMEEditor(node);
 
     const overlay = document.createElement("div");
+    // Windowed panel (not fullscreen): centred, ~portion of the screen like
+    // ComfyUI's own mask editor. The big spread box-shadow paints the dim
+    // backdrop around the panel with no extra element, so close() (which just
+    // removes `overlay`) still works. Drag by the title bar, resize from the
+    // bottom-right corner (CSS `resize`).
     overlay.style.cssText = `
-        position:fixed;inset:0;z-index:var(--c2c-z-modal, 10000);
-        background:color-mix(in srgb, ${C.bg} 94%, transparent);
-        display:flex;flex-direction:column;color:${C.text};
+        position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
+        width:min(1360px,90vw);height:min(880px,88vh);
+        min-width:520px;min-height:380px;
+        z-index:var(--c2c-z-modal, 10000);
+        background:${C.bg};color:${C.text};
+        display:flex;flex-direction:column;
+        border:1px solid ${C.border};border-radius:12px;overflow:hidden;resize:both;
+        box-shadow:0 0 0 100vmax color-mix(in srgb, ${C.bg} 55%, transparent),
+                   0 24px 70px rgba(0,0,0,0.55);
         font-family:Inter,system-ui,sans-serif;
     `;
     document.body.appendChild(overlay);
@@ -754,12 +1023,23 @@ function openModal(node) {
     };
 
     // ── Tool buttons ───────────────────────────────────────────────
+    // Paint tools + a Nuke-style shape suite. Shape tools drag out a
+    // bounding box and rasterise the primitive into the current keyframe's
+    // alpha mask, so the frame-by-frame keyframe/tween/player path is
+    // completely unchanged — shapes are just another way to fill alpha.
     const tools = [
-        { id: "brush",  label: "🖌 Brush",  hot: "B" },
-        { id: "erase",  label: "🧽 Erase",  hot: "E" },
-        { id: "fill",   label: "🪣 Fill",   hot: "G" },
-        { id: "lasso",  label: "✂ Lasso",  hot: "L" },
+        { id: "brush",   label: "🖌 Brush",   hot: "B" },
+        { id: "erase",   label: "🧽 Erase",   hot: "E" },
+        { id: "fill",    label: "🪣 Fill",    hot: "G" },
+        { id: "lasso",   label: "✂ Lasso",   hot: "L" },
+        { id: "rect",    label: "▭ Rect",    hot: "R", shape: true },
+        { id: "ellipse", label: "◯ Ellipse", hot: "C", shape: true },
+        { id: "polygon", label: "⬠ Polygon", hot: "P", shape: true },
+        { id: "star",    label: "★ Star",    hot: "T", shape: true },
+        { id: "line",    label: "／ Line",    hot: "N", shape: true },
+        { id: "pen",     label: "✎ Roto",    hot: "Y" },   // editable spline roto
     ];
+    const SHAPE_IDS = new Set(tools.filter(t => t.shape).map(t => t.id));
     const toolBtns = {};
     const setTool = (id) => {
         ed.tool = id;
@@ -770,6 +1050,9 @@ function openModal(node) {
             toolBtns[k].style.borderColor = sel ? C.accent : C.border;
         }
         ed.lasso = [];
+        ed.penPoints = []; ed.penHover = null; ed.penDragIdx = -1;   // reset roto path
+        // Show polygon/star/rotation controls only for shape tools.
+        if (ed._shapeCtrls) ed._shapeCtrls.style.display = SHAPE_IDS.has(id) ? "flex" : "none";
         ed.draw();
     };
     for (const t of tools) {
@@ -810,6 +1093,19 @@ function openModal(node) {
     top.appendChild(sliderWrap("Feather", 0, 100, Math.round(ed.brushFeather * 100), 1,
         v => { ed.brushFeather = v / 100; }, "%"));
 
+    // Shape params (polygon/star sides, star point sharpness, rotation).
+    // Shown only while a shape tool is active (toggled in setTool).
+    const shapeCtrls = document.createElement("div");
+    shapeCtrls.style.cssText = "display:none;align-items:center;gap:6px;";
+    shapeCtrls.appendChild(sliderWrap("Sides", 3, 24, ed.shapeSides, 1,
+        v => { ed.shapeSides = v | 0; ed.draw(); }));
+    shapeCtrls.appendChild(sliderWrap("Point", 10, 90, Math.round(ed.starInner * 100), 1,
+        v => { ed.starInner = v / 100; ed.draw(); }, "%"));
+    shapeCtrls.appendChild(sliderWrap("Rotate", 0, 360, 0, 1,
+        v => { ed.shapeRotation = v * Math.PI / 180; ed.draw(); }, "°"));
+    top.appendChild(shapeCtrls);
+    ed._shapeCtrls = shapeCtrls;
+
     const sep = () => { const d = document.createElement("div"); d.style.cssText = `width:1px;height:22px;background:${C.border};margin:0 4px;`; return d; };
     top.appendChild(sep());
 
@@ -819,6 +1115,40 @@ function openModal(node) {
     const btnRedo = mkBtn("↷", { title: "Redo (Ctrl+Y)" });
     btnRedo.onclick = () => ed.redoOp();
     top.appendChild(btnRedo);
+
+    top.appendChild(sep());
+
+    // Whole-frame ops.
+    const btnInvert = mkBtn("⇋ Invert", { title: "Invert this frame's mask (I)" });
+    btnInvert.onclick = () => ed._invertMask();
+    top.appendChild(btnInvert);
+    const btnClear = mkBtn("🗑 Clear", { title: "Clear this frame's mask (Del)" });
+    btnClear.onclick = () => ed._clearMask();
+    top.appendChild(btnClear);
+    const btnFillFrame = mkBtn("▣ Fill", { title: "Fill the whole frame" });
+    btnFillFrame.onclick = () => ed._fillFrame();
+    top.appendChild(btnFillFrame);
+
+    // Add / Subtract mode — shapes & roto cut holes when Subtract is on.
+    const btnSub = mkBtn("➖ Subtract", { title: "Shapes/Roto SUBTRACT from the mask (X)" });
+    const syncSub = () => {
+        btnSub.style.background = ed.subtractMode ? C.danger + "55" : C.panel;
+        btnSub.style.borderColor = ed.subtractMode ? C.danger : C.border;
+        btnSub.innerHTML = ed.subtractMode ? "➖ Subtract" : "➕ Add";
+    };
+    btnSub.onclick = () => { ed.subtractMode = !ed.subtractMode; syncSub(); };
+    syncSub();
+    top.appendChild(btnSub);
+
+    // Roto smoothing toggle.
+    const btnSmooth = mkBtn("〜 Smooth", { title: "Roto: smooth spline vs straight edges" });
+    const syncSmooth = () => {
+        btnSmooth.style.background = ed.penSmooth ? C.accent + "44" : C.panel;
+        btnSmooth.innerHTML = ed.penSmooth ? "〜 Smooth" : "⟋ Corners";
+    };
+    btnSmooth.onclick = () => { ed.penSmooth = !ed.penSmooth; syncSmooth(); ed.draw(); };
+    syncSmooth();
+    top.appendChild(btnSmooth);
 
     const btnOnion = mkBtn("🧅 Onion", { title: "Toggle onion-skin (O)", bg: ed.onion ? C.accent + "44" : C.panel });
     btnOnion.onclick = () => {
@@ -946,6 +1276,25 @@ function openModal(node) {
             ed.draw();
             return;
         }
+        if (SHAPE_IDS.has(ed.tool)) {
+            ed._pushUndo();
+            ed.shapeStart = fp;
+            ed.shapeCur = fp;
+            ed.shapeSquare = e.shiftKey;
+            ed.shaping = true;
+            ed.draw();
+            return;
+        }
+        if (ed.tool === "pen") {
+            const tol = 9 / ed.zoom;
+            const hit = ed._penHit(fp, tol);
+            if (hit === 0 && ed.penPoints.length >= 3) { ed._commitPen(); ed.draw(); return; }
+            if (hit >= 0) { ed.penDragIdx = hit; ed.draw(); return; }  // grab to adjust
+            ed.penPoints.push({ x: fp.x, y: fp.y });                    // place anchor
+            ed.penHover = { x: fp.x, y: fp.y };
+            ed.draw();
+            return;
+        }
         ed._pushUndo();
         ed.painting = true;
         ed._stamp(fp.x, fp.y, null);
@@ -971,6 +1320,19 @@ function openModal(node) {
             ed.draw();
             return;
         }
+        if (ed.shaping) {
+            ed.shapeCur = ed._viewToFrame(vx, vy);
+            ed.shapeSquare = e.shiftKey;
+            ed.draw();                         // live preview outline
+            return;
+        }
+        if (ed.tool === "pen") {
+            const fp = ed._viewToFrame(vx, vy);
+            if (ed.penDragIdx >= 0) { ed.penPoints[ed.penDragIdx] = { x: fp.x, y: fp.y }; }
+            ed.penHover = { x: fp.x, y: fp.y };  // rubber-band to cursor
+            ed.draw();
+            return;
+        }
         if (ed.tool === "brush" || ed.tool === "erase") {
             ed.draw();
         }
@@ -979,6 +1341,13 @@ function openModal(node) {
     canvas.addEventListener("mouseup", (e) => {
         if (panning) { panning = false; panStart = null; }
         if (ed.painting) { ed.painting = false; ed.lastPaint = null; }
+        if (ed.penDragIdx >= 0) { ed.penDragIdx = -1; }
+        if (ed.shaping) {
+            ed.shaping = false;
+            ed._rasterizeShape(ed.tool);       // bake the shape into the keyframe alpha
+            ed.shapeStart = ed.shapeCur = null;
+            ed.draw();
+        }
     });
 
     canvas.addEventListener("dblclick", (e) => {
@@ -989,6 +1358,7 @@ function openModal(node) {
             ed.curDirty = true;
             ed.draw();
         }
+        if (ed.tool === "pen" && ed.penPoints.length >= 3) { ed._commitPen(); ed.draw(); }
     });
 
     canvas.addEventListener("contextmenu", (e) => {
@@ -1020,11 +1390,27 @@ function openModal(node) {
         if (e.key === " ") { spaceDown = (e.type === "keydown"); e.preventDefault(); return; }
         if (e.type !== "keydown") return;
         if (e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA")) return;
-        if (e.key === "Escape") { close(false); e.preventDefault(); return; }
+        if (e.key === "Escape") {
+            if (ed.tool === "pen" && ed.penPoints.length) { ed.penPoints = []; ed.penHover = null; ed.penDragIdx = -1; ed.draw(); e.preventDefault(); return; }
+            close(false); e.preventDefault(); return;
+        }
+        if (e.key === "Enter" && ed.tool === "pen" && ed.penPoints.length >= 3) { ed._commitPen(); ed.draw(); e.preventDefault(); return; }
+        if (e.key === "Backspace" && ed.tool === "pen" && ed.penPoints.length) { ed.penPoints.pop(); ed.draw(); e.preventDefault(); return; }
+        const mod = e.ctrlKey || e.metaKey;
+        // Whole-frame ops.
+        if ((e.key === "i" || e.key === "I") && !mod) { ed._invertMask(); e.preventDefault(); return; }
+        if ((e.key === "Delete") && !mod) { ed._clearMask(); e.preventDefault(); e.stopImmediatePropagation(); return; }
+        if ((e.key === "x" || e.key === "X") && !mod) { btnSub.click(); e.preventDefault(); return; }
+        if ((e.key === "y" || e.key === "Y") && !mod) { setTool("pen"); e.preventDefault(); return; }
         if (e.key === "b" || e.key === "B") { setTool("brush"); e.preventDefault(); return; }
         if (e.key === "e" || e.key === "E") { setTool("erase"); e.preventDefault(); return; }
         if (e.key === "g" || e.key === "G") { setTool("fill"); e.preventDefault(); return; }
         if (e.key === "l" || e.key === "L") { setTool("lasso"); e.preventDefault(); return; }
+        if (e.key === "r" || e.key === "R") { setTool("rect"); e.preventDefault(); return; }
+        if (e.key === "c" || e.key === "C") { setTool("ellipse"); e.preventDefault(); return; }
+        if (e.key === "p" || e.key === "P") { setTool("polygon"); e.preventDefault(); return; }
+        if (e.key === "t" || e.key === "T") { setTool("star"); e.preventDefault(); return; }
+        if (e.key === "n" || e.key === "N") { setTool("line"); e.preventDefault(); return; }
         if (e.key === "k" || e.key === "K") { ed.pin(); e.preventDefault(); return; }
         if (e.key === "o" || e.key === "O") { btnOnion.click(); e.preventDefault(); return; }
         // NOTE: bare F is reserved by KJNodes.fillConnectSelected. Use Shift+F here.

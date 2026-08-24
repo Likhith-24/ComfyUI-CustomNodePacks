@@ -10,6 +10,7 @@
  */
 
 import { app } from "../../scripts/app.js";
+import { LITE } from "./_c2c_lite.js";
 
 const HUD_ID   = "mec-complexity-hud";
 const STYLE_ID = "mec-complexity-hud-style";

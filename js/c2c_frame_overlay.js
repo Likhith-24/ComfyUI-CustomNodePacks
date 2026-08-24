@@ -16,6 +16,7 @@
  */
 
 import { app } from "../../scripts/app.js";
+import { LITE } from "./_c2c_lite.js";
 import { api } from "../../scripts/api.js";
 
 const STYLE_ID = "mec-frame-overlay-style";

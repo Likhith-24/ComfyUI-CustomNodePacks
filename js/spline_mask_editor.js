@@ -24,6 +24,8 @@ import { app } from "../../scripts/app.js";
 import { installModeGated } from "./_mode_gate.js";
 import { C, bg3, border, peach } from "./_c2c_theme.js";
 import { reportFailure as __c2cReport } from "./_c2c_report.js";
+import { drawEditorEmptyState } from "./_editor_empty_state.js";
+import { ensureC2CKit } from "./_c2c_ui_kit.js";
 
 // Targets both the unified SplineMaskMEC (mode=edit) node and any
 // legacy SplineMaskEditorMEC references that may still live on saved
@@ -551,7 +553,12 @@ function sampleShape(sh, samplesPerSeg, alpha) {
 
 function draw(ed, ctx, vw, vh) {
     ctx.save();
-    ctx.fillStyle = COLOR.bg;
+    // Outer fill MUST be a resolved literal — Canvas2D cannot parse the raw
+    // `var(--c2c-bg2)` that COLOR.bg holds, so it silently rendered BLACK: that
+    // was the "dead space" letterbox the user saw. With no backdrop image the
+    // whole area IS the drawing surface (bg3); with an image we letterbox
+    // against a soft neutral (bg2) instead of harsh black.
+    ctx.fillStyle = ed.refImg ? C.bg2 : C.bg3;
     ctx.fillRect(0, 0, vw, vh);
 
     const z = ed.zoom;
@@ -562,6 +569,12 @@ function draw(ed, ctx, vw, vh) {
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = "high";
         try { ctx.drawImage(ed.refImg, 0, 0, ed.canvasW, ed.canvasH); } catch (__c2cErr) { __c2cReport("spline_mask_editor", __c2cErr); }
+    } else if (!ed.shapes.some(s => s.points.length > 0)) {
+        drawEditorEmptyState(ctx, ed.canvasW, ed.canvasH, z, "✎", [
+            "Click to place spline points",
+            "Drag points to shape the mask · + Path starts another shape",
+            "Connect an image for a reference backdrop",
+        ]);
     } else {
         ctx.fillStyle = C.bg3;
         ctx.fillRect(0, 0, ed.canvasW, ed.canvasH);
@@ -572,20 +585,31 @@ function draw(ed, ctx, vw, vh) {
 
     for (let s = 0; s < ed.shapes.length; s++) {
         const sh = ed.shapes[s];
-        const c = COLOR.paths[s % COLOR.paths.length];
+        // Resolved literals — COLOR.paths holds var(--…) strings which canvas
+        // cannot parse (strokeStyle/fillStyle silently keep their previous
+        // value). C.* resolves to real hex from the active theme.
+        const PATHC = [C.green, C.blue, C.yellow, C.peach, C.pink, C.teal];
+        const c = PATHC[s % PATHC.length];
         const isActive = s === ed.active;
 
         if (sh.points.length >= 2) {
             const sampled = sampleShape(sh, ed.samplesPerSegment, ed.centripetalAlpha);
             ctx.strokeStyle = c;
             ctx.lineWidth = (isActive ? 2.0 : 1.5) / z;
-            ctx.fillStyle = c + "22";
             ctx.beginPath();
             ctx.moveTo(sampled[0].x, sampled[0].y);
             for (let i = 1; i < sampled.length; i++) ctx.lineTo(sampled[i].x, sampled[i].y);
             if (sh.closed) {
                 ctx.closePath();
+                // globalAlpha instead of `c + "22"`: COLOR.paths entries were
+                // var(--…) strings, so the concatenated fillStyle was INVALID
+                // and canvas silently kept the LAST valid fill — the dark
+                // backdrop — filling the whole shape opaque black over the
+                // image (the reported bug). Nuke-style: image stays visible.
+                ctx.fillStyle = c;
+                ctx.globalAlpha = 0.14;
                 ctx.fill();
+                ctx.globalAlpha = 1.0;
             }
             ctx.stroke();
         }
@@ -606,9 +630,15 @@ function draw(ed, ctx, vw, vh) {
             }
         }
 
-        // Bezier handle endpoints + connector lines (active shape only).
+        // Bezier handle endpoints + connector lines — Nuke behaviour: the
+        // tangents always shape the curve, but the handle UI only appears
+        // for the point you are working with (hovered or mid-drag), not
+        // splayed across every vertex.
         if (isActive && sh.type === "bezier" && Array.isArray(sh.handles)) {
             for (let i = 0; i < sh.points.length; i++) {
+                const engaged = (ed.hover.shape === s && ed.hover.point === i)
+                    || (ed.drag && ed.drag.point === i);
+                if (!engaged) continue;
                 const p = sh.points[i];
                 const h = sh.handles[i];
                 if (!h) continue;
@@ -714,24 +744,31 @@ function installEditor(node) {
     syncFromWidgets();
     ed.load();
 
+    ensureC2CKit();
     const root = document.createElement("div");
+    root.className = "c2ck";
     // Inset from node body — leaves a hit area for LiteGraph border / resize
     // corner so the user can grab edges and the bottom-right grip.
     root.style.cssText = `
+        position:relative;
         display:flex;flex-direction:column;
         width:calc(100% - 12px);height:calc(100% - 18px);
         margin:2px 6px 16px 6px;
-        background:${COLOR.bg};border:1px solid ${COLOR.border};border-radius:6px;
-        overflow:hidden;font-family:Inter,system-ui,sans-serif;color:${COLOR.text};
+        background:#161616;border:1px solid #111;border-radius:7px;
+        overflow:hidden;color:#e6e6e6;
         box-sizing:border-box;user-select:none;
         pointer-events:none;
     `;
+    // ^ position:relative is REQUIRED: the ≡ actions menu is position:absolute
+    //   (top:34px;right:6px) and must anchor to THIS root — without it the menu
+    //   resolved against a higher positioned ancestor and appeared OFFSET from
+    //   the button (worse at graph zoom).
 
     const tb = document.createElement("div");
+    tb.className = "c2ck-toolbar";
     tb.style.cssText = `
-        display:flex;align-items:center;gap:4px;padding:4px 6px;
-        background:linear-gradient(var(--c2c-panelTint),var(--c2c-panelHi));
-        border-bottom:1px solid ${COLOR.border};
+        display:flex;align-items:center;gap:4px;padding:5px 7px;
+        background:#1e1e1e;border-bottom:1px solid #111;
         flex:0 0 auto;font-size:11px;line-height:1;
         pointer-events:auto;
     `;
@@ -760,17 +797,7 @@ function installEditor(node) {
     const mkIcon = (label, title, onClick) => {
         const b = document.createElement("button");
         b.textContent = label; b.title = title;
-        b.style.cssText = `
-            min-width:26px;height:24px;padding:0 7px;
-            border:1px solid ${COLOR.border};border-radius:4px;
-            background:var(--c2c-border);color:${COLOR.text};
-            font-size:11px;font-weight:500;cursor:pointer;
-            display:inline-flex;align-items:center;justify-content:center;
-            white-space:nowrap;line-height:1;flex:0 0 auto;
-            transition:background .12s,border-color .12s;
-        `;
-        b.onmouseenter = () => { b.style.background = "var(--c2c-surface1)"; b.style.borderColor = "var(--c2c-surface2)"; };
-        b.onmouseleave = () => { b.style.background = C.border; b.style.borderColor = COLOR.border; };
+        b.className = "c2ck-btn c2ck-btn-icon";
         b.onmousedown = (e) => e.stopPropagation();
         b.onclick = (e) => { e.preventDefault(); e.stopPropagation(); onClick(b); render(); };
         return b;
@@ -789,6 +816,33 @@ function installEditor(node) {
     tb.appendChild(mkIcon("+ Path", "Add new path (N)", () => {
         ed.pushUndo(); ed.newPath(); ed.save();
     }));
+
+    // "+ Shape" primitive picker — drops an editable ellipse/rect/polygon/star/
+    // circle as a new closed path (smooth shapes get many points; rect/polygon/
+    // star get cusp corners so they stay sharp). Mirrors _spline_curves.
+    const addPrimitive = (type) => {
+        ed.pushUndo();
+        const W = ed.canvasW || 512, H = ed.canvasH || 512;
+        const box = [{ x: W * 0.28, y: H * 0.28 }, { x: W * 0.72, y: H * 0.72 }];
+        const params = { sides: type === "star" ? 5 : 6, inner_ratio: 0.5 };
+        const smooth = (type === "circle" || type === "ellipse" || type === "arc" || type === "rounded_rect");
+        const pts = makePrimitive(type, box, smooth ? 48 : 3, params);
+        const sh = { points: pts, type: ed.splineType || "catmull_rom", closed: true };
+        if (!smooth) sh.cusps = pts.map(() => true);   // sharp corners
+        ed.shapes.push(sh);
+        ed.active = ed.shapes.length - 1;
+        ed.save();
+    };
+    const shapeSel = document.createElement("select");
+    shapeSel.className = "c2ck-btn";
+    shapeSel.title = "Add an editable primitive shape";
+    shapeSel.style.cssText = "font-size:11px;padding:2px 4px;";
+    shapeSel.innerHTML = '<option value="">+ Shape…</option>' +
+        ["ellipse", "circle", "rectangle", "rounded_rect", "polygon", "star"]
+            .map(t => `<option value="${t}">${t.replace("_", " ")}</option>`).join("");
+    shapeSel.onmousedown = (e) => e.stopPropagation();
+    shapeSel.onchange = () => { if (shapeSel.value) { addPrimitive(shapeSel.value); shapeSel.value = ""; render(); } };
+    tb.appendChild(shapeSel);
     const closedBtn = mkIcon("◯", "Toggle closed (C)", () => {
         if (ed.active < 0) return;
         ed.pushUndo();
@@ -813,109 +867,202 @@ function installEditor(node) {
     const menuBtn = mkIcon("≡", "More actions", () => toggleMenu());
     tb.appendChild(menuBtn);
 
-    const menu = document.createElement("div");
-    menu.style.cssText = `
-        position:absolute;top:34px;right:6px;z-index:var(--c2c-z-hud);
-        background:var(--c2c-bg);border:1px solid ${COLOR.border};border-radius:6px;
-        box-shadow:0 6px 20px var(--c2c-black);padding:4px;display:none;
-        min-width:200px;font-size:11px;
-    `;
+    // ≡ menu — mounted on document.body with position:fixed and a top-level
+    // z-index. Mounted inside the node it sat UNDER third-party overlays
+    // (rgthree's <rgthree-progress-bar> intercepted every click at the menu's
+    // coordinates — the reported "menu buttons do nothing"). Items act on
+    // pointerdown so nothing downstream can swallow the interaction.
     root.style.position = "relative";
-    root.appendChild(menu);
+    const MENU_ITEMS = () => [
+        { label: "Reset zoom (100%)", run: () => { ed.zoom = 1; ed.panX = 0; ed.panY = 0; } },
+        { label: "Fit to view", run: () => {
+            const r = canvasWrap.getBoundingClientRect(); ed.fitView(r.width, r.height);
+        } },
+        { sep: true },
+        { label: (() => { const w = node.widgets?.find(x => x.name === "invert"); return w?.value ? "✓ Invert mask output" : "Invert mask output"; })(),
+          run: () => {
+              const w = node.widgets?.find(x => x.name === "invert");
+              if (w) { w.value = !w.value; if (typeof w.callback === "function") w.callback(w.value); node.setDirtyCanvas(true, true); }
+          } },
+        { sep: true },
+        { label: "Clear active path", danger: true, run: () => {
+            if (ed.active < 0) return;
+            ed.pushUndo(); ed.shapes[ed.active].points = []; ed.save();
+        } },
+        { label: "Delete active path", danger: true, run: () => {
+            if (ed.active < 0) return;
+            ed.pushUndo();
+            ed.shapes.splice(ed.active, 1);
+            ed.active = ed.shapes.length ? Math.min(ed.active, ed.shapes.length - 1) : -1;
+            ed.save();
+        } },
+        { label: "Clear all paths", danger: true, run: () => {
+            if (!ed.shapes.length) return;
+            ed.pushUndo(); ed.shapes = []; ed.active = -1; ed.save();
+        } },
+    ];
 
-    const mkMenuItem = (label, onClick, danger) => {
-        const it = document.createElement("div");
-        it.textContent = label;
-        it.style.cssText = `
-            padding:7px 12px;border-radius:4px;cursor:pointer;
-            color:${danger ? "var(--c2c-red)" : COLOR.text};white-space:nowrap;
-        `;
-        it.onmouseenter = () => it.style.background = C.border;
-        it.onmouseleave = () => it.style.background = "";
-        it.onclick = (e) => { e.stopPropagation(); menu.style.display = "none"; onClick(); render(); };
-        return it;
-    };
-    const mkMenuSep = () => {
-        const s = document.createElement("div");
-        s.style.cssText = `height:1px;background:${COLOR.border};margin:4px 2px;`;
-        return s;
-    };
-
-    menu.appendChild(mkMenuItem("Reset zoom (100%)", () => { ed.zoom = 1; ed.panX = 0; ed.panY = 0; }));
-    menu.appendChild(mkMenuItem("Fit to view", () => {
-        const r = canvasWrap.getBoundingClientRect(); ed.fitView(r.width, r.height);
-    }));
-    menu.appendChild(mkMenuSep());
-    menu.appendChild(mkMenuItem("Clear active path", () => {
-        if (ed.active < 0) return;
-        ed.pushUndo(); ed.shapes[ed.active].points = []; ed.save();
-    }, true));
-    menu.appendChild(mkMenuItem("Delete active path", () => {
-        if (ed.active < 0) return;
-        ed.pushUndo();
-        ed.shapes.splice(ed.active, 1);
-        ed.active = ed.shapes.length ? Math.min(ed.active, ed.shapes.length - 1) : -1;
-        ed.save();
-    }, true));
-    menu.appendChild(mkMenuItem("Clear all paths", () => {
-        if (!ed.shapes.length) return;
-        ed.pushUndo(); ed.shapes = []; ed.active = -1; ed.save();
-    }, true));
-
+    let _openMenuEl = null;
+    function _closeMenu() {
+        if (_openMenuEl) { try { _openMenuEl.remove(); } catch (_) {} _openMenuEl = null; }
+    }
     function toggleMenu() {
-        const open = menu.style.display === "none" || !menu.style.display;
-        menu.style.display = open ? "block" : "none";
-        if (open) {
-            const off = (e) => {
-                if (!menu.contains(e.target) && e.target !== menuBtn) {
-                    menu.style.display = "none";
-                    document.removeEventListener("mousedown", off, true);
-                }
+        if (_openMenuEl) { _closeMenu(); return; }
+        const menu = document.createElement("div");
+        const br = menuBtn.getBoundingClientRect();
+        menu.style.cssText = `
+            position:fixed;top:${Math.round(br.bottom + 4)}px;z-index:2147483000;
+            background:var(--c2c-bg);border:1px solid ${COLOR.border};border-radius:6px;
+            box-shadow:0 6px 20px rgba(0,0,0,0.6);padding:4px;
+            min-width:200px;font-size:11px;
+        `;
+        // right-align to the button, clamped to the viewport
+        menu.style.left = Math.max(8, Math.round(br.right - 208)) + "px";
+        for (const item of MENU_ITEMS()) {
+            if (item.sep) {
+                const s = document.createElement("div");
+                s.style.cssText = `height:1px;background:${COLOR.border};margin:4px 2px;`;
+                menu.appendChild(s);
+                continue;
+            }
+            const it = document.createElement("div");
+            it.textContent = item.label;
+            it.style.cssText = `
+                padding:7px 12px;border-radius:4px;cursor:pointer;
+                color:${item.danger ? "var(--c2c-red)" : COLOR.text};white-space:nowrap;
+            `;
+            it.onmouseenter = () => it.style.background = C.border;
+            it.onmouseleave = () => it.style.background = "";
+            it.onpointerdown = (e) => {
+                e.stopPropagation(); e.preventDefault();
+                _closeMenu();
+                item.run(); render();
             };
-            setTimeout(() => document.addEventListener("mousedown", off, true), 0);
+            menu.appendChild(it);
         }
+        document.body.appendChild(menu);
+        _openMenuEl = menu;
+        const off = (e) => {
+            if (!menu.contains(e.target) && e.target !== menuBtn) {
+                _closeMenu();
+                document.removeEventListener("pointerdown", off, true);
+            }
+        };
+        setTimeout(() => document.addEventListener("pointerdown", off, true), 0);
     }
 
-    let widgetH = 220;
+    let widgetH = 300;
+    const EDIT_MIN_H = 200, EDIT_MAX_H = 860;
     const canvasWidget = node.addDOMWidget("spline_editor", "canvas", root, {
         serialize: false,
         hideOnZoom: false,
         getMinHeight: () => widgetH,
         getHeight: () => widgetH,
+        getMaxHeight: () => EDIT_MAX_H,
     });
+    // Size the DOM widget the proven way (mirrors the working FaceController3D
+    // editor): modern ComfyUI lays DOM widgets out via `computeLayoutSize`
+    // (min/max) + `getHeight`, and the element's OWN style.height must be set
+    // directly — otherwise the widget stays pinned to its min height and the node
+    // leaves empty body below it (the "tiny image + dead space" bug). `widgetH`
+    // is the single source of truth, driven by the image aspect in resizeForImage.
+    canvasWidget.computeLayoutSize = () => ({ minHeight: EDIT_MIN_H, maxHeight: EDIT_MAX_H });
     canvasWidget.computeSize = function (width) {
-        const base = node.computeSize?.(width);
-        const chrome = Array.isArray(base) ? (base[1] || 0) : 0;
-        const extra = Math.max(0, (node.size?.[1] || 0) - chrome);
-        const h = extra > 120 ? Math.min(360, extra - 32) : widgetH;
-        widgetH = h;
-        return [width, Math.max(160, h)];
+        return [width, Math.max(EDIT_MIN_H, widgetH)];
     };
+    try { root.style.height = widgetH + "px"; } catch (_) {}
 
     node._mecSplineEditHost = root;
     node._mecSplineEditWidget = canvasWidget;
     node._mecSplineEditWidgetH = () => widgetH;
 
+    // Keep the node wide enough for a USABLE editor canvas while an editing mode
+    // is active. The mode-gate calls `node.setSize(node.computeSize())`, and the
+    // node's own computeSize returns the narrow widget-driven width (~280px) —
+    // which snapped the node back from 600→280 and collapsed the canvas to
+    // ~186px / "zoom 21%" (the "spline editor doesn't work" report). Enforce a
+    // minimum width via computeSize so BOTH our setSize and the mode-gate's keep
+    // the editor roomy. Only in editor modes, so non-editing modes stay compact.
+    const MIN_EDIT_W = 600;
+    const _editorModeActive = () => {
+        const mv = node.widgets?.find?.((x) => x && x.name === "mode")?.value ?? "";
+        // All three modes embed a full-width canvas editor (edit = spline draw,
+        // track = keyframe frame-viewer, flow_path = flow editor) — each needs
+        // the roomy width or its canvas collapses to ~186px. "track" was missing,
+        // which is why track mode snapped back to ~281px / dead space.
+        return mv === "edit" || mv === "flow_path" || mv === "track";
+    };
+    if (!node._mecSplineCSPatched) {
+        node._mecSplineCSPatched = true;
+        const _origCS = typeof node.computeSize === "function" ? node.computeSize.bind(node) : null;
+        node.computeSize = function (w) {
+            const sz = _origCS ? _origCS(w) : [MIN_EDIT_W, 380];
+            try { if (_editorModeActive()) sz[0] = Math.max(sz[0] || 0, MIN_EDIT_W); } catch (_) {}
+            return sz;
+        };
+    }
+
     node.setSize?.([Math.max(node.size?.[0] || 0, 600), Math.max(node.size?.[1] || 0, 380)]);
 
-    // When a backdrop image is loaded, grow the canvas widget so the
-    // image's aspect fits without huge empty bars. Mirrors points editor.
+    // Grow the node so the editor's aspect matches the backdrop image → the photo
+    // FILLS the editor (contain-fit fills both dims, no big margins). Uses the
+    // proven FaceController3D height-sync: set the widget height + the element's
+    // own style.height, then setSize the node to (top chrome + editor), guarded
+    // against the onResize→setSize→onResize runaway.
+    let _syncInFlight = false;
+    function _syncEditorHeight() {
+        if (_syncInFlight || !root) return;
+        _syncInFlight = true;
+        try {
+            const cur = node.size || [0, 0];
+            // Node height ABOVE the editor = current total minus the editor's
+            // current footprint. Measure BEFORE we change the element height so the
+            // math is stable (no circular reflow read).
+            const topPx = Math.max(0, (cur[1] || 0) - (root.offsetHeight || widgetH));
+            const h = Math.max(EDIT_MIN_H, Math.min(EDIT_MAX_H, Math.round(widgetH)));
+            widgetH = h;
+            root.style.height = h + "px";
+            const target = Math.round(topPx + h + 18);   // +18 = root's 2px top / 16px bottom margin
+            if (Math.abs(target - (cur[1] || 0)) > 3) {
+                node.__mecSplineSyncing = true;
+                try { node.setSize([cur[0], target]); } finally { node.__mecSplineSyncing = false; }
+            }
+            node.setDirtyCanvas?.(true, true);
+        } catch (_) { /* never break the editor */ }
+        finally { _syncInFlight = false; }
+        // ComfyUI's DOM-widget wrapper grows a frame or two AFTER setSize; a single
+        // immediate re-fit locks the image into the small INTERMEDIATE size (the
+        // "zoom 37%" report). Staggered re-fits once the wrapper settles — same
+        // proven pattern as the points editor. Idempotent + cheap.
+        for (const d of [0, 60, 200, 400]) setTimeout(() => { ed._fitted = false; render(); }, d);
+    }
     function resizeForImage() {
         if (!ed.canvasW || !ed.canvasH) return;
         const baseW = (node.size?.[0] || 600) - 24;
         if (baseW <= 0) return;
         const aspect = ed.canvasH / ed.canvasW;
-        const targetH = Math.max(220, Math.min(520, Math.round(baseW * aspect) + 48));
-        if (Math.abs(targetH - widgetH) >= 10) {
-            widgetH = targetH;
-            const curH = node.size?.[1] || widgetH;
-            const minH = (node.computeSize?.()?.[1]) || widgetH;
-            if (curH < minH) node.setSize?.([node.size[0], minH]);
-        }
+        // editor height that makes the editor aspect == image aspect at full width
+        // (+40 for the toolbar strip). Clamped so an extreme portrait stays sane.
+        widgetH = Math.max(EDIT_MIN_H, Math.min(EDIT_MAX_H, Math.round(baseW * aspect) + 40));
+        _syncEditorHeight();
     }
 
     let lastW = 0, lastH = 0;
     function syncCanvasPx() {
+        // canvasWrap is flex:1 1 auto inside the flex-column root, but ComfyUI's
+        // DOM-widget layout does NOT reliably distribute height to a <canvas>
+        // child — the wrap collapses to the canvas's intrinsic height, so the
+        // image auto-fit ran against a ~266px viewport ("zoom 37%") even though
+        // the editor root was 530px+. Size it EXPLICITLY = root minus toolbar,
+        // exactly like the points editor / tracker fix (see memory: the flex-fill
+        // bug). Uses unscaled layout px (offsetHeight), transform-safe.
+        try {
+            const availH = (root.offsetHeight || 0) - (tb.offsetHeight || 0);
+            if (availH > 40 && Math.abs((canvasWrap.offsetHeight || 0) - availH) > 2) {
+                canvasWrap.style.height = availH + "px";
+                canvasWrap.style.flex = "0 0 auto";
+            }
+        } catch (_) {}
         const r = canvasWrap.getBoundingClientRect();
         // Parent ComfyUI canvas applies CSS transform: scale(zoom) to DOM
         // widgets. Use offsetWidth/Height (unscaled layout pixels) to keep
@@ -932,6 +1079,18 @@ function installEditor(node) {
         canvas.width = w * dpr;
         canvas.height = h * dpr;
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        // No backdrop image + auto output dims + nothing drawn yet → make the
+        // logical drawing surface EQUAL the viewport so it FILLS the node body
+        // instead of letterboxing a fixed 512² into a wide, short strip. Frozen
+        // the moment a shape exists so the user's points never rescale.
+        if (!ed.refImg && ed.shapes.length === 0) {
+            const wW = node.widgets?.find(x => x.name === "width");
+            const hW = node.widgets?.find(x => x.name === "height");
+            if ((!wW || +wW.value <= 0) && (!hW || +hW.value <= 0)) {
+                ed.canvasW = w; ed.canvasH = h;
+                ed.zoom = 1; ed.panX = 0; ed.panY = 0; ed._fitted = true;
+            }
+        }
         // Auto-fit ONLY on first sizing or when a new image set _fitted=false.
         // Previously we re-fit on every resize → any container reflow snapped
         // the user's zoom/pan back to "fit", which is the "bouncy image"
@@ -997,7 +1156,7 @@ function installEditor(node) {
 
     canvas.addEventListener("pointerdown", (e) => {
         e.preventDefault(); canvas.focus();
-        canvas.setPointerCapture(e.pointerId);
+        try { canvas.setPointerCapture(e.pointerId); } catch (_) {} // pointer may already be inactive (pen/touch/synthetic)
         const c = eventCanvas(e);
 
         if (e.button === 1 || (e.button === 0 && e.altKey)) {
@@ -1097,7 +1256,7 @@ function installEditor(node) {
     });
 
     canvas.addEventListener("pointerup", (e) => {
-        try { canvas.releasePointerCapture(e.pointerId); } catch (__c2cErr) { __c2cReport("spline_mask_editor", __c2cErr); }
+        try { canvas.releasePointerCapture(e.pointerId); } catch (__c2cErr) { __c2cReport("spline_mask_editor.releaseCapture", __c2cErr, { level: "info" }); } // expected when pointer already inactive
         if (ed.drag?.kind === "pan") {
             ed.drag = null; canvas.style.cursor = "crosshair"; return;
         }

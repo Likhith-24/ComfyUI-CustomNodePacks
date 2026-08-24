@@ -1871,7 +1871,7 @@ function _installMenuPatch() {
     };
 }
 
-if (!LITE) app.registerExtension({
+app.registerExtension({
     name: "C2C.NoodleStyles",
     settings: [
         {
