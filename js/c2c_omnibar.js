@@ -579,7 +579,7 @@ function _findManagerButtonGroup() {
     // Falls back to first button-group inside .actionbar-container.
     // (Pre-2026-05-26 we also looked for the legacy `#mec-integrity-btn`
     // anchor; that element no longer exists.)
-    const bar = document.querySelector(".actionbar-container, .comfyui-menu .actionbar");
+    const bar = document.querySelector(".actionbar-container, .comfyui-menu .actionbar, .top-menu-container .actionbar");
     if (!bar) return null;
     const groups = bar.querySelectorAll(".comfyui-button-group");
     for (const g of groups) {
@@ -649,7 +649,7 @@ function _ensurePill() {
 
 function _startPillObserver() {
     if (_pillObserver) return;
-    const target = document.querySelector(".actionbar-container, .comfyui-menu") || document.body;
+    const target = document.querySelector(".actionbar-container, .comfyui-menu, .top-menu-container") || document.body;
     // PERF 2026-05-26: rAF-coalesce mutation bursts. The actionbar/menu
     // subtree mutates on every queue-execution / model-load tick; without
     // coalescing _ensurePill() runs dozens of times per second during heavy
@@ -786,6 +786,7 @@ const _NATIVE_TOP_SELECTORS = [
     ".comfyui-body-top",
     ".comfy-menu",
     ".comfyui-menu",
+    ".top-menu-container",   // ComfyUI >= 1.16 renamed the top bar
     ".comfyui-workflow-tabs",
     ".workflow-tabs-container",
     ".workflow-tabs",

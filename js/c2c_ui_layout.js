@@ -168,7 +168,7 @@ function _measureTopChromeBottom() {
     // narrow `.workflow-tabs` tablist) so we always pick up the deepest
     // visual edge of the native top chrome — even when only one workflow
     // is open and `.workflow-tabs` is only ~190px wide.
-    for (const sel of [".comfyui-body-top", ".workflow-tabs-container", ".workflow-tabs", ".comfyui-menu", "#comfyui-menu", ".comfy-menu"]) {
+    for (const sel of [".comfyui-body-top", ".workflow-tabs-container", ".workflow-tabs", ".comfyui-menu", "#comfyui-menu", ".top-menu-container", ".comfy-menu"]) {
         const el = document.querySelector(sel);
         if (!el) continue;
         const r = el.getBoundingClientRect();

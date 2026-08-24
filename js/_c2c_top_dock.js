@@ -128,6 +128,7 @@ function _measureTopChromeBottom() {
         ".comfyui-body-top",
         ".comfy-menu",
         ".comfyui-menu",
+        ".top-menu-container",   // ComfyUI >= 1.16 renamed the top bar
         ".comfyui-workflow-tabs",
         ".workflow-tabs-container",   // full-width wrapper (modern ComfyUI)
         ".workflow-tabs",              // inner tablist (may be narrow)

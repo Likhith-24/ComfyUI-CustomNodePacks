@@ -353,14 +353,14 @@ function findManagerButton() {
         'button#comfyui-manager-button',
         'button[aria-label*="Manager" i]',
         'button[title*="Manager" i]',
-        '.comfyui-menu button[label*="Manager" i]',
+        '.comfyui-menu button[label*="Manager" i], .top-menu-container button[label*="Manager" i]',
     ];
     for (const sel of sels) {
         const el = document.querySelector(sel);
         if (el) return el;
     }
     // Text-content scan as last resort.
-    for (const b of document.querySelectorAll(".comfyui-menu button, .comfy-menu button, header button")) {
+    for (const b of document.querySelectorAll(".comfyui-menu button, .top-menu-container button, .comfy-menu button, header button")) {
         const t = (b.textContent || "").trim();
         if (/manager/i.test(t)) return b;
     }
@@ -369,7 +369,7 @@ function findManagerButton() {
 
 function findFallbackContainer() {
     return (
-        document.querySelector(".comfyui-menu .comfyui-menu-right") ||
+        document.querySelector(".comfyui-menu .comfyui-menu-right, .top-menu-container .comfyui-menu-right") ||
         document.querySelector(".comfyui-menu") ||
         document.querySelector(".comfy-menu") ||
         null
