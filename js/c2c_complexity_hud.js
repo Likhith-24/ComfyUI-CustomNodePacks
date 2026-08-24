@@ -357,7 +357,7 @@ app.registerExtension({
             name: "Complexity HUD: enabled",
             tooltip: "Show the Easy/Medium/Advanced complexity chip at the top of the canvas.",
             type: "boolean",
-            default: true,
+            defaultValue: true,
             onChange: () => _update(),
         },
     ],

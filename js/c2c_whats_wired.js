@@ -609,7 +609,7 @@ app.registerExtension({
             name: "What's Wired: workflow legend",
             tooltip: "Floating window summarising the active pipeline (model, sampler, size, LoRAs, conditioning, prompts, outputs).",
             type: "boolean",
-            default: true,
+            defaultValue: true,
             onChange: _render,
         },
     ],

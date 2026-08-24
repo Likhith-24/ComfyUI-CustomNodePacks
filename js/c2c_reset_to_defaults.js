@@ -194,7 +194,7 @@ app.registerExtension({
             name: "C2C \u25B8 Reset-to-defaults \u25B8 Capture Ctrl+R",
             tooltip: "When ON, Ctrl+R resets selected (or all) nodes to /object_info defaults instead of reloading the browser. Turn OFF to restore browser reload.",
             type: "boolean",
-            default: true,
+            defaultValue: true,
         },
     ],
     commands: [

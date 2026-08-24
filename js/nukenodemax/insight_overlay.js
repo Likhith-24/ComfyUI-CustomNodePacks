@@ -177,7 +177,7 @@ app.registerExtension({
             name: "Insight Overlay: always-on badges",
             tooltip: "Paint VRAM/timing badges below every node continuously. When OFF (default), badges are still computed and visible on right-click → Insight, but the canvas stays clean. Disable this if the badges scale awkwardly when you zoom the canvas.",
             type: "boolean",
-            default: false,
+            defaultValue: false,
         },
     ],
     setup() {
