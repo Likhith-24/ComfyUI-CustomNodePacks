@@ -181,7 +181,7 @@ function _scanAll() {
     forAllNodes((n) => { _attachToNode(n); });
 }
 
-if (!LITE) app.registerExtension({
+app.registerExtension({
     name: "C2C.TokenCounter",
     settings: [
         {

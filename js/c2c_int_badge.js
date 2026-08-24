@@ -1072,7 +1072,7 @@ function _registerChip() {
     return true;
 }
 
-if (!LITE) app.registerExtension({
+app.registerExtension({
     name: "C2C.IntBadge",
     settings: [
         {

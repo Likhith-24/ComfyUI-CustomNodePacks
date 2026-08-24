@@ -232,7 +232,7 @@ function toggleSidebar() {
     } catch (e) { console.warn("[c2c_ws_logger] toggle failed", e); }
 }
 
-if (!LITE) app.registerExtension({
+app.registerExtension({
     name: "C2C.WSLogger",
     async setup() {
         app.ui.settings.addSetting({

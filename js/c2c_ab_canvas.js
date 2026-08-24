@@ -1130,7 +1130,7 @@ function _onExecutionSuccess(ev) {
 // Extension entry
 // ─────────────────────────────────────────────────────────────────────────────
 
-if (!LITE) app.registerExtension({
+app.registerExtension({
     name: "C2C.ABSplit",
     settings: [
         {

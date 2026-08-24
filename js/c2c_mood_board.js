@@ -669,7 +669,7 @@ function _onExecuted(ev) {
 // Extension entry
 // ─────────────────────────────────────────────────────────────────────────────
 
-if (!LITE) app.registerExtension({
+app.registerExtension({
     name: "C2C.MoodBoard",
     settings: [
         {

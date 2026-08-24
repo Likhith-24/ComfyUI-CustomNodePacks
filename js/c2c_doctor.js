@@ -1449,7 +1449,7 @@ window.__C2C_DOCTOR_V3__ = {
     status: () => _doctorStatus(),
 };
 
-if (!LITE) app.registerExtension({
+app.registerExtension({
     name: "C2C.DoctorV3",
     async setup() {
         injectStyles();

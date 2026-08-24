@@ -44,21 +44,54 @@ export const LITE = (() => {
 const SKIP_WHEN_LITE = new Set([
     "C2C.StatsPill", "C2C.IntBadge", "C2C.StatusStrip", "C2C.TopDock",
     "C2C.UILayout", "C2C.MoodBoard", "C2C.FrameOverlay", "C2C.GraphHealth",
-    "C2C.NodeBookmarks", "C2C.TokenCounter", "C2C.SurpriseMe",
+    "C2C.NodeBookmarks", "tokens",   // NOT "C2C.TokenCounter" — that name never existed "C2C.SurpriseMe",
     "C2C.CostEstimator", "C2C.MetadataInspector", "C2C.OverlayVisibility",
     "c2c.ai.statusBar", "MEC.IntegrityStatus",
+    "C2C.NodeExplain", "C2C.ProgressHUD", "C2C.OmniBar", "Yellow",
+    "C2C.CompatibilityHints", "C2C.DoctorV3", "C2C.DiagnosticsSidebar",
+    "C2C.WorkflowWizard", "C2C.WSLogger",
+    "C2C.ABSplit", "C2C.ColorspaceBadges", "C2C.CompletionFX",
+    "C2C.ComplexityHUD", "C2C.DockAnchor", "C2C.FlameGraph",
+    "C2C.NoodleStyles", "C2C.WireLabels",
 ]);
+
+// Everything that makes an extension COST something at runtime. Lite mode
+// strips exactly these and passes the rest through.
+const BEHAVIOUR_KEYS = [
+    "init", "setup", "aboutPageBadges", "commands", "keybindings", "menuCommands",
+    "beforeRegisterNodeDef", "beforeRegisterVueAppNodeDefs", "registerCustomNodes",
+    "loadedGraphNode", "nodeCreated", "beforeConfigureGraph", "afterConfigureGraph",
+    "onNodeOutputsUpdated", "getCustomWidgets", "getSelectionToolboxCommands",
+];
 
 if (LITE && typeof app.registerExtension === "function"
         && !app.registerExtension._c2cLitePatched) {
     const _origReg = app.registerExtension.bind(app);
-    // Rest args, not (ext): ComfyUI has added parameters to registerExtension
-    // before, and swallowing them here would silently drop options on every
-    // extension in the app, not just ours.
+    // Rest args, not (ext): this replaces app.registerExtension for the WHOLE
+    // app, and ComfyUI has added parameters to it before — swallowing them
+    // would silently drop options for every other extension pack installed.
     const _filtered = function (ext, ...rest) {
         if (ext && SKIP_WHEN_LITE.has(ext.name)) {
-            try { console.debug("[C2C.Lite] skipped", ext.name); } catch (_) {}
-            return undefined;
+            // Register a STRIPPED extension rather than dropping it.
+            //
+            // Dropping it outright is what made "all my settings vanished":
+            // ComfyUI builds the settings panel from the `settings` array on the
+            // registered extension, so an unregistered extension has no entries
+            // — and the values the user had already chosen have nothing left to
+            // attach to. Lite mode is supposed to turn BEHAVIOUR off, never to
+            // take away the control that turns it back on.
+            //
+            // So keep name + settings (+ their onChange, which is how the user
+            // re-enables things), and drop only the keys that install work:
+            // timers, draw hooks, node hooks, DOM.
+            const lean = { name: ext.name };
+            if (ext.settings) lean.settings = ext.settings;
+            for (const k of Object.keys(ext)) {
+                if (k === "name" || k === "settings") continue;
+                if (!BEHAVIOUR_KEYS.includes(k)) lean[k] = ext[k];   // inert data
+            }
+            try { console.debug("[C2C.Lite] stripped", ext.name); } catch (_) {}
+            return _origReg(lean, ...rest);
         }
         return _origReg(ext, ...rest);
     };

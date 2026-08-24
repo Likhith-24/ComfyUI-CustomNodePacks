@@ -1228,7 +1228,7 @@ function _onSuccess() {
     } catch { /* ignore */ }
 }
 
-if (!LITE) app.registerExtension({
+app.registerExtension({
     name: "C2C.CompletionFX",
     // NOTE: ComfyUI's settings panel reads `defaultValue` — registering with
     // only `default` rendered every combo EMPTY (the reported "celebration

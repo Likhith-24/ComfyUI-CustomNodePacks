@@ -242,7 +242,7 @@ function _patchDrawConnections() {
     LGraphCanvas.prototype.drawConnections._mecWireLabelsPatched = true;
 }
 
-if (!LITE) app.registerExtension({
+app.registerExtension({
     name: "C2C.WireLabels",
     settings: [
         {

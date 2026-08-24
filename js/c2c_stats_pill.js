@@ -676,7 +676,7 @@ if (typeof window !== "undefined") {
     });
 }
 
-if (!LITE) app.registerExtension({
+app.registerExtension({
     name: "C2C.StatsPill",
     settings: [
         {

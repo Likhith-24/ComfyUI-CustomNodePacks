@@ -221,7 +221,7 @@ function _onExecuted(node, output) {
     if (state.update) state.update();
 }
 
-if (!LITE) app.registerExtension({
+app.registerExtension({
     name: "C2C.FrameOverlay",
     settings: [
         {

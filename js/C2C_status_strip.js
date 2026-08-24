@@ -202,7 +202,7 @@ function _start() {
     _ensureHost();
 }
 
-if (!LITE) app.registerExtension({
+app.registerExtension({
     name: "C2C.StatusStrip",
     settings: [
         {

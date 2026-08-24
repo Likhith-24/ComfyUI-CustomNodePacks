@@ -1213,7 +1213,7 @@ try {
 }
 
 // ── Extension registration ──────────────────────────────────────────────────
-if (!LITE) app.registerExtension({
+app.registerExtension({
     name: "C2C.OmniBar",
     settings: [
         {

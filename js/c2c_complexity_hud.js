@@ -349,7 +349,7 @@ function _hookGraphMutations() {
     if (typeof g.onConnectionChange !== "function") g.onConnectionChange = _scheduleUpdate;
 }
 
-if (!LITE) app.registerExtension({
+app.registerExtension({
     name: "C2C.ComplexityHUD",
     settings: [
         {

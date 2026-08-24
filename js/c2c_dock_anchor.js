@@ -196,7 +196,7 @@ function _boot() {
 
 window.__mecDock = { register, unregister, recompute };
 
-if (!LITE) app.registerExtension({
+app.registerExtension({
     name: "C2C.DockAnchor",
     async setup() {
         _boot();

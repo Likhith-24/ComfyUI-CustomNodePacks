@@ -390,7 +390,7 @@ function _ensureButton() {
     });
 }
 
-if (!LITE) app.registerExtension({
+app.registerExtension({
     name: "C2C.SurpriseMe",
     settings: [
         {

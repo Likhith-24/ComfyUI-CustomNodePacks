@@ -126,7 +126,7 @@ function _patch() {
     };
 }
 
-if (!LITE) app.registerExtension({
+app.registerExtension({
     name: "C2C.ColorspaceBadges",
     settings: [
         {

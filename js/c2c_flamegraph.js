@@ -536,7 +536,7 @@ function _ensureUi() {
     }
 }
 
-if (!LITE) app.registerExtension({
+app.registerExtension({
     name: "C2C.FlameGraph",
     settings: [
         {

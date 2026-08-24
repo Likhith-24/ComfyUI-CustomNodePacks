@@ -504,7 +504,7 @@ function _exportJson() {
     setTimeout(() => URL.revokeObjectURL(a.href), 5000);
 }
 
-if (!LITE) app.registerExtension({
+app.registerExtension({
     name: "C2C.CostEstimator",
     settings: [
         {
