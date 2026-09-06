@@ -412,4 +412,15 @@ class SamMultiMaskPickerMEC:
         empty_batch = torch.zeros(3, H, W, dtype=torch.float32)
         scores_str = json.dumps([0.0, 0.0, 0.0])
         info = json.dumps({"error": reason, "num_masks": 0, "scores_pct": [0.0, 0.0, 0.0]})
-        return (empty_single, empty_batch, 0, scores_str, info)
+        # Same {"ui", "result"} shape as the success path.
+        #
+        # This used to return a BARE TUPLE while the success path returned the dict
+        # form. Both are valid to ComfyUI, but only the dict form emits an
+        # `executed` message carrying a ui payload — so on any SAM failure the JS
+        # picker was never told, and kept displaying the thumbnails from the
+        # previous successful run next to a now-empty mask. Clearing the thumbs
+        # explicitly is what makes a failure visible in the widget.
+        return {
+            "ui": {"mask_thumbs": [], "scores": [scores_str], "selected_index": [0]},
+            "result": (empty_single, empty_batch, 0, scores_str, info),
+        }

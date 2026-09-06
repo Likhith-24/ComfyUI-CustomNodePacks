@@ -239,3 +239,8 @@ renderfarm/config/audit.db-shm
 
 # but the C2C Farm render-farm test suite IS part of the source tree
 !renderfarm/tests/
+
+# test scratch dirs (tests point folder_paths at the OS temp area now)
+_test_temp/
+_test_output/
+_test_input/
